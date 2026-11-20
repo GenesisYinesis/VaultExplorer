@@ -1,0 +1,90 @@
+name: TR Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android NDK r28c
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.2.13676358"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> $GITHUB_ENV
+
+      - name: Resolve dependencies
+        run: |
+          .flutter/bin/flutter config --no-analytics
+          .flutter/bin/flutter pub get --enforce-lockfile
+
+      - name: Restore signing key
+        env:
+          KS_B64: ${{ secrets.TR_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.TR_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.TR_KEY_ALIAS }}
+        run: |
+          test -n "$KS_B64" || { echo "TR_KEYSTORE_B64 secret yok, once tr_key.sh calistir"; exit 1; }
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/tr.jks"
+          {
+            echo "storePassword=$KS_PASS"
+            echo "keyPassword=$KS_PASS"
+            echo "keyAlias=$KS_ALIAS"
+            echo "storeFile=$RUNNER_TEMP/tr.jks"
+          } > android/key.properties
+
+      - name: Build armeabi (32-bit) APK
+        run: |
+          .flutter/bin/flutter build apk --release --target-platform=android-arm
+          mkdir -p out
+          cp build/app/outputs/flutter-apk/app-release.apk out/VaultExplorer-TR-armeabi.apk
+
+      - name: Build arm64 APK
+        run: |
+          .flutter/bin/flutter build apk --release --target-platform=android-arm64
+          cp build/app/outputs/flutter-apk/app-release.apk out/VaultExplorer-TR-arm64.apk
+
+      - name: Verify signatures
+        run: |
+          APKSIGNER=$(ls $ANDROID_HOME/build-tools/*/apksigner | tail -1)
+          for f in out/*.apk; do $APKSIGNER verify --verbose "$f" | head -3; done
+
+      - name: Save generated localization files to branch tr-pr
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          mkdir -p /tmp/gen
+          cp -r lib/l10n/generated /tmp/gen/
+          cp lib/l10n/untranslated_messages.json lib/l10n/app_tr.arb /tmp/gen/
+          git checkout -f -B tr-pr 07560af1de39d387a1a1dcf98d3fb0a139b2d4fd
+          cp -r /tmp/gen/generated lib/l10n/
+          cp /tmp/gen/untranslated_messages.json /tmp/gen/app_tr.arb lib/l10n/
+          mkdir -p android/app/src/main/res/values-tr
+          git show main:android/app/src/main/res/values-tr/strings.xml > android/app/src/main/res/values-tr/strings.xml
+          git show main:lib/features/settings/app_settings_screen.dart > lib/features/settings/app_settings_screen.dart
+          git add lib/l10n android/app/src/main/res/values-tr lib/features/settings/app_settings_screen.dart
+          git commit -m "Add Turkish (tr) localization" || echo "Degisiklik yok"
+          git push -f origin tr-pr
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete tr-latest --cleanup-tag --yes || true
+          gh release create tr-latest out/*.apk --title "VaultExplorer TR" --notes "Turkish build" --prerelease --target "$GITHUB_SHA"
