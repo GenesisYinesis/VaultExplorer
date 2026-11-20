@@ -15,6 +15,7 @@ import java.io.IOException
 import java.util.concurrent.ExecutorService
 import com.aeidolon.vaultexplorer.container.ContainerEngine
 import com.aeidolon.vaultexplorer.MainActivity
+import com.aeidolon.vaultexplorer.FallbackFilePicker
 import com.aeidolon.vaultexplorer.NativeOpSupport
 import com.aeidolon.vaultexplorer.PendingActivityResult
 
@@ -152,19 +153,30 @@ class VaultCreationHandlers(
     }
 
     private fun deleteIncompleteDocument(uri: Uri) {
+        if (uri.scheme == "file") {
+            try { uri.path?.let { File(it).delete() } } catch (_: Exception) {}
+            return
+        }
         try { DocumentFile.fromSingleUri(activity, uri)?.delete() } catch (_: Exception) {}
     }
 
     private val createContainerLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
+        handleCreateResult(activityResult.resultCode, activityResult.data?.data)
+    }
+
+    /**
+     * Shared completion path for both the system picker and the in-app
+     * fallback picker (used on devices that have no system document picker).
+     */
+    private fun handleCreateResult(resultCode: Int, pickedUri: Uri?) {
+        val res = pendingResult.take() ?: return
         val create = pendingCreate
         pendingCreate = null
 
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null && create != null) {
-            val destUri = data.data!!
+        if (resultCode == Activity.RESULT_OK && pickedUri != null && create != null) {
+            val destUri: Uri = pickedUri
             ioExecutor.execute {
                 var stagingFile: File? = null
                 try {
@@ -193,6 +205,20 @@ class VaultCreationHandlers(
         } else {
             create?.userEntropy?.fill(0)
             res.success(mapOf("success" to false, "uri" to null))
+        }
+    }
+
+    private fun launchFallbackCreate(name: String) {
+        if (!FallbackFilePicker.ensureStoragePermission(activity)) {
+            handleCreateResult(Activity.RESULT_CANCELED, null)
+            return
+        }
+        FallbackFilePicker.pickSaveLocation(activity, name) { file ->
+            if (file == null) {
+                handleCreateResult(Activity.RESULT_CANCELED, null)
+            } else {
+                handleCreateResult(Activity.RESULT_OK, Uri.fromFile(file))
+            }
         }
     }
 
@@ -231,6 +257,10 @@ class VaultCreationHandlers(
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "application/octet-stream"
             putExtra(Intent.EXTRA_TITLE, name)
+        }
+        if (FallbackFilePicker.isSystemPickerMissing(activity, intent)) {
+            launchFallbackCreate(name)
+            return
         }
         createContainerLauncher.launch(intent)
     }

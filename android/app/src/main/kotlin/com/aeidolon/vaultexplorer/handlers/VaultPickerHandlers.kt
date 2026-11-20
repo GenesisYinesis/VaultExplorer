@@ -18,6 +18,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.util.concurrent.ExecutorService
 import com.aeidolon.vaultexplorer.MainActivity
+import com.aeidolon.vaultexplorer.FallbackFilePicker
 import com.aeidolon.vaultexplorer.NativeOpSupport
 import com.aeidolon.vaultexplorer.PendingActivityResult
 import com.aeidolon.vaultexplorer.SafSplitResolver
@@ -127,17 +128,26 @@ class VaultPickerHandlers(
     private val pickContainerLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
-            val uri = data.data!!
+        handlePickContainerResult(activityResult.resultCode, activityResult.data?.data)
+    }
+
+    /**
+     * Shared completion path for both the system picker and the in-app
+     * fallback picker (used on devices that have no system document picker).
+     */
+    private fun handlePickContainerResult(resultCode: Int, pickedUri: Uri?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && pickedUri != null) {
+            val uri: Uri = pickedUri
             ioExecutor.execute {
-                try {
-                    activity.contentResolver.takePersistableUriPermission(
-                        uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                    )
-                } catch (_: SecurityException) {}
+                if (uri.scheme == "content") {
+                    try {
+                        activity.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    } catch (_: SecurityException) {}
+                }
                 val name = UriNameResolver.resolve(activity.contentResolver, uri)
                 val payload = mapOf(
                     "uri" to uri.toString(),
@@ -589,6 +599,20 @@ class VaultPickerHandlers(
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
+        }
+        if (FallbackFilePicker.isSystemPickerMissing(activity, intent)) {
+            if (!FallbackFilePicker.ensureStoragePermission(activity)) {
+                handlePickContainerResult(Activity.RESULT_CANCELED, null)
+                return
+            }
+            FallbackFilePicker.pickFile(activity) { file ->
+                if (file == null) {
+                    handlePickContainerResult(Activity.RESULT_CANCELED, null)
+                } else {
+                    handlePickContainerResult(Activity.RESULT_OK, Uri.fromFile(file))
+                }
+            }
+            return
         }
         pickContainerLauncher.launch(intent)
     }

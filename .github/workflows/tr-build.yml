@@ -2,6 +2,11 @@ name: TR Build
 
 on:
   workflow_dispatch:
+    inputs:
+      update_pr:
+        description: 'Rebuild tr-pr branch (leave false)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: write
@@ -66,6 +71,7 @@ jobs:
           for f in out/*.apk; do $APKSIGNER verify --verbose "$f" | head -3; done
 
       - name: Save generated localization files to branch tr-pr
+        if: ${{ github.event.inputs.update_pr == 'true' }}
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"

@@ -47,4 +47,12 @@
     <string name="vault_media_notification_title">Kasadan oynatılıyor</string>
     <string name="vault_media_notification_title_local">Medya oynatılıyor</string>
     <string name="vault_pip_action_audio_only">Yalnızca ses</string>
+    <string name="fallback_picker_choose_storage">Depolama seçin</string>
+    <string name="fallback_picker_internal_storage">Dahili depolama</string>
+    <string name="fallback_picker_save_here">Buraya kaydet: %1$s</string>
+    <string name="fallback_picker_parent">.. (üst klasör)</string>
+    <string name="fallback_picker_unreadable">(klasör okunamıyor)</string>
+    <string name="fallback_picker_cancel">İptal</string>
+    <string name="fallback_picker_permission_title">Depolama izni gerekli</string>
+    <string name="fallback_picker_permission_message">Bu cihazda sistem dosya seçicisi yok. Uygulama ayarlarından Tüm dosyalara erişim iznini verin, sonra tekrar deneyin.</string>
 </resources>
