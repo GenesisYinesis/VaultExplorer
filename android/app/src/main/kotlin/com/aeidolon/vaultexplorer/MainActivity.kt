@@ -664,6 +664,9 @@ open class MainActivity : FlutterFragmentActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (FallbackFilePicker.onPermissionResult(requestCode, grantResults)) {
+            return
+        }
         if (requestCode == com.aeidolon.vaultexplorer.camera.CAMERA_PERMISSION_REQUEST_CODE) {
             val granted = grantResults.isNotEmpty() && grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
             methodChannel?.invokeMethod("onCameraPermissionResult", mapOf("granted" to granted))

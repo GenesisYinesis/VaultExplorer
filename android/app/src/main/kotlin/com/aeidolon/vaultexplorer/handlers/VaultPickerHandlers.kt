@@ -601,17 +601,19 @@ class VaultPickerHandlers(
             type = "*/*"
         }
         if (FallbackFilePicker.isSystemPickerMissing(activity, intent)) {
-            if (!FallbackFilePicker.ensureStoragePermission(activity)) {
-                handlePickContainerResult(Activity.RESULT_CANCELED, null)
-                return
-            }
-            FallbackFilePicker.pickFile(activity) { file ->
-                if (file == null) {
-                    handlePickContainerResult(Activity.RESULT_CANCELED, null)
-                } else {
-                    handlePickContainerResult(Activity.RESULT_OK, Uri.fromFile(file))
-                }
-            }
+            FallbackFilePicker.withStoragePermission(
+                activity,
+                onGranted = {
+                    FallbackFilePicker.pickFile(activity) { file ->
+                        if (file == null) {
+                            handlePickContainerResult(Activity.RESULT_CANCELED, null)
+                        } else {
+                            handlePickContainerResult(Activity.RESULT_OK, Uri.fromFile(file))
+                        }
+                    }
+                },
+                onDenied = { handlePickContainerResult(Activity.RESULT_CANCELED, null) },
+            )
             return
         }
         pickContainerLauncher.launch(intent)

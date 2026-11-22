@@ -209,17 +209,19 @@ class VaultCreationHandlers(
     }
 
     private fun launchFallbackCreate(name: String) {
-        if (!FallbackFilePicker.ensureStoragePermission(activity)) {
-            handleCreateResult(Activity.RESULT_CANCELED, null)
-            return
-        }
-        FallbackFilePicker.pickSaveLocation(activity, name) { file ->
-            if (file == null) {
-                handleCreateResult(Activity.RESULT_CANCELED, null)
-            } else {
-                handleCreateResult(Activity.RESULT_OK, Uri.fromFile(file))
-            }
-        }
+        FallbackFilePicker.withStoragePermission(
+            activity,
+            onGranted = {
+                FallbackFilePicker.pickSaveLocation(activity, name) { file ->
+                    if (file == null) {
+                        handleCreateResult(Activity.RESULT_CANCELED, null)
+                    } else {
+                        handleCreateResult(Activity.RESULT_OK, Uri.fromFile(file))
+                    }
+                }
+            },
+            onDenied = { handleCreateResult(Activity.RESULT_CANCELED, null) },
+        )
     }
 
     fun handleCreateContainer(call: MethodCall, result: MethodChannel.Result) {

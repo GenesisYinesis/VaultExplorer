@@ -1,11 +1,14 @@
 package com.aeidolon.vaultexplorer
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.widget.ArrayAdapter
+import androidx.core.app.ActivityCompat
 import java.io.File
 
 /**
@@ -17,6 +20,8 @@ import java.io.File
  * objects; callers turn them into file:// URIs, which the existing
  * RawFileResolver / UriToPath code already understands.
  */
+const val FALLBACK_STORAGE_PERMISSION_REQUEST_CODE = 9825
+
 object FallbackFilePicker {
 
     /**
@@ -38,15 +43,55 @@ object FallbackFilePicker {
         return Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q
     }
 
-    /** Shows a short explanation and returns false when raw storage access is missing. */
-    fun ensureStoragePermission(activity: Activity): Boolean {
-        if (RawFileResolver.hasExternalStoragePermission(activity)) return true
+    private var pendingGranted: (() -> Unit)? = null
+    private var pendingDenied: (() -> Unit)? = null
+
+    /**
+     * Runs [onGranted] once raw storage access is available, otherwise
+     * [onDenied]. Below API 30 the READ/WRITE_EXTERNAL_STORAGE runtime
+     * permissions are requested and the outcome arrives through
+     * [onPermissionResult]. From API 30 on, all-files access cannot be
+     * requested with a runtime dialog, so a short explanation is shown and
+     * [onDenied] runs.
+     */
+    fun withStoragePermission(activity: Activity, onGranted: () -> Unit, onDenied: () -> Unit) {
+        if (RawFileResolver.hasExternalStoragePermission(activity)) {
+            onGranted()
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            pendingDenied?.invoke()
+            pendingGranted = onGranted
+            pendingDenied = onDenied
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
+                FALLBACK_STORAGE_PERMISSION_REQUEST_CODE,
+            )
+            return
+        }
         AlertDialog.Builder(activity)
             .setTitle(R.string.fallback_picker_permission_title)
             .setMessage(R.string.fallback_picker_permission_message)
             .setPositiveButton(android.R.string.ok, null)
             .show()
-        return false
+        onDenied()
+    }
+
+    /** Called from MainActivity.onRequestPermissionsResult. Returns true when the code was ours. */
+    fun onPermissionResult(requestCode: Int, grantResults: IntArray): Boolean {
+        if (requestCode != FALLBACK_STORAGE_PERMISSION_REQUEST_CODE) return false
+        val granted = grantResults.isNotEmpty() &&
+            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        val onGranted = pendingGranted
+        val onDenied = pendingDenied
+        pendingGranted = null
+        pendingDenied = null
+        if (granted) onGranted?.invoke() else onDenied?.invoke()
+        return true
     }
 
     fun pickFile(activity: Activity, onResult: (File?) -> Unit) {
