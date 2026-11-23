@@ -224,12 +224,15 @@ class VaultPickerHandlers(
     private val pickCryptomatorVaultLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickCryptomatorVaultResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickCryptomatorVaultResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
             ioExecutor.execute {
-                try {
+                if (uri.scheme == "content") try {
                     activity.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -254,12 +257,15 @@ class VaultPickerHandlers(
     private val pickGocryptfsVaultLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickGocryptfsVaultResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickGocryptfsVaultResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
             ioExecutor.execute {
-                try {
+                if (uri.scheme == "content") try {
                     activity.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -284,12 +290,15 @@ class VaultPickerHandlers(
     private val pickCryfsVaultLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickCryfsVaultResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickCryfsVaultResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
             ioExecutor.execute {
-                try {
+                if (uri.scheme == "content") try {
                     activity.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -321,12 +330,15 @@ class VaultPickerHandlers(
     private val pickFolderVaultForRepairLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickFolderVaultForRepairResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickFolderVaultForRepairResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
             ioExecutor.execute {
-                try {
+                if (uri.scheme == "content") try {
                     activity.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -384,10 +396,23 @@ class VaultPickerHandlers(
     private val pickExtractFolderLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickExtractFolderResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickExtractFolderResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
+
+            // Fallback picker: a plain folder, reachable by path only.
+            if (uri.scheme == "file") {
+                res.success(mapOf(
+                    "path" to uri.path,
+                    "displayName" to UriNameResolver.resolve(activity.contentResolver, uri),
+                    "treeUri" to null,
+                ))
+                return
+            }
 
             // Refuse to let the user add one of this app's own exposed SAF
             // roots back to itself as an "external storage" location -- the
@@ -405,7 +430,7 @@ class VaultPickerHandlers(
                 activity.runOnUiThread {
                     res.success(mapOf("selfReference" to true))
                 }
-                return@registerForActivityResult
+                return
             }
 
             val takeFlags = (data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
@@ -609,17 +634,26 @@ class VaultPickerHandlers(
      * pair the activity-result launcher would have delivered. Returns false,
      * doing nothing, when the system picker is available.
      */
-    private fun pickWithFallback(intent: Intent, onResult: (Int, Intent?) -> Unit): Boolean {
+    private fun pickWithFallback(
+        intent: Intent,
+        folder: Boolean = false,
+        onResult: (Int, Intent?) -> Unit,
+    ): Boolean {
         if (!FallbackFilePicker.isSystemPickerMissing(activity, intent)) return false
         FallbackFilePicker.withStoragePermission(
             activity,
             onGranted = {
-                FallbackFilePicker.pickFile(activity) { file ->
+                val done: (java.io.File?) -> Unit = { file ->
                     if (file == null) {
                         onResult(Activity.RESULT_CANCELED, null)
                     } else {
                         onResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file)))
                     }
+                }
+                if (folder) {
+                    FallbackFilePicker.pickFolder(activity, done)
+                } else {
+                    FallbackFilePicker.pickFile(activity, done)
                 }
             },
             onDenied = { onResult(Activity.RESULT_CANCELED, null) },
@@ -655,24 +689,28 @@ class VaultPickerHandlers(
     fun handlePickCryptomatorVault(call: MethodCall, result: MethodChannel.Result) {
         pendingResult.stash(result)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (pickWithFallback(intent, folder = true, onResult = ::handlePickCryptomatorVaultResult)) return
         pickCryptomatorVaultLauncher.launch(intent)
     }
 
     fun handlePickGocryptfsVault(call: MethodCall, result: MethodChannel.Result) {
         pendingResult.stash(result)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (pickWithFallback(intent, folder = true, onResult = ::handlePickGocryptfsVaultResult)) return
         pickGocryptfsVaultLauncher.launch(intent)
     }
 
     fun handlePickCryfsVault(call: MethodCall, result: MethodChannel.Result) {
         pendingResult.stash(result)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (pickWithFallback(intent, folder = true, onResult = ::handlePickCryfsVaultResult)) return
         pickCryfsVaultLauncher.launch(intent)
     }
 
     fun handlePickFolderVaultForRepair(call: MethodCall, result: MethodChannel.Result) {
         pendingResult.stash(result)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (pickWithFallback(intent, folder = true, onResult = ::handlePickFolderVaultForRepairResult)) return
         pickFolderVaultForRepairLauncher.launch(intent)
     }
 
@@ -683,13 +721,14 @@ class VaultPickerHandlers(
             type = "application/zip"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed"))
         }
-        if (pickWithFallback(intent, ::handlePickArchiveFileResult)) return
+        if (pickWithFallback(intent, onResult = ::handlePickArchiveFileResult)) return
         pickArchiveFileLauncher.launch(intent)
     }
 
     fun handlePickExtractFolder(call: MethodCall, result: MethodChannel.Result) {
         pendingResult.stash(result)
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (pickWithFallback(intent, folder = true, onResult = ::handlePickExtractFolderResult)) return
         pickExtractFolderLauncher.launch(intent)
     }
 
@@ -700,7 +739,7 @@ class VaultPickerHandlers(
             type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        if (pickWithFallback(intent, ::handlePickKeyfilesResult)) return
+        if (pickWithFallback(intent, onResult = ::handlePickKeyfilesResult)) return
         pickKeyfilesLauncher.launch(intent)
     }
 
@@ -712,7 +751,7 @@ class VaultPickerHandlers(
             type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        if (pickWithFallback(intent, ::handlePickCryptoFilesResult)) return
+        if (pickWithFallback(intent, onResult = ::handlePickCryptoFilesResult)) return
         pickCryptoFilesLauncher.launch(intent)
     }
 }

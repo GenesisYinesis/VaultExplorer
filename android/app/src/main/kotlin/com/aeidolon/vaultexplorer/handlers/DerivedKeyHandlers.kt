@@ -64,7 +64,7 @@ class DerivedKeyHandlers(
 
     private fun folderVaultFingerprint(treeUri: Uri): String? {
         return try {
-            val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(activity, treeUri) ?: return null
+            val root = com.aeidolon.vaultexplorer.saf.VaultRootDocument.from(activity, treeUri) ?: return null
             val saf = com.aeidolon.vaultexplorer.saf.SafDocumentOps(activity)
             for (markerName in FOLDER_VAULT_MARKER_FILES) {
                 val markerDoc = saf.childOf(root, markerName) ?: continue
@@ -88,7 +88,8 @@ class DerivedKeyHandlers(
     private fun containerFingerprint(filePath: String): String? {
         return try {
             val uri = Uri.parse(filePath)
-            if (android.provider.DocumentsContract.isTreeUri(uri)) {
+            val isFileFolder = uri.scheme == "file" && java.io.File(uri.path ?: "").isDirectory
+            if (isFileFolder || android.provider.DocumentsContract.isTreeUri(uri)) {
                 return folderVaultFingerprint(uri)
             }
             when (uri.scheme) {

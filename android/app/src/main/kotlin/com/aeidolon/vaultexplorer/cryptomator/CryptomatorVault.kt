@@ -1,8 +1,8 @@
 package com.aeidolon.vaultexplorer.cryptomator
 
+import com.aeidolon.vaultexplorer.saf.VaultRootDocument
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import com.aeidolon.vaultexplorer.engine.VaultOpenResult
 import com.aeidolon.vaultexplorer.foldervault.FolderVaultOpener
 import com.aeidolon.vaultexplorer.foldervault.NativeFolderVault
@@ -21,7 +21,7 @@ object CryptomatorVault {
     const val CURRENT_CIPHER_COMBO = "SIV_GCM"
 
     fun looksLikeVault(context: Context, treeUri: Uri): Boolean {
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+        val root = VaultRootDocument.from(context, treeUri) ?: return false
         val name = MASTERKEY_FILE_NAME
         return name.isNotEmpty() && root.listFiles().any { it.name == name }
     }

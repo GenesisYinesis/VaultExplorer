@@ -1,5 +1,6 @@
 package com.aeidolon.vaultexplorer.foldervault
 
+import com.aeidolon.vaultexplorer.saf.VaultRootDocument
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
@@ -42,13 +43,13 @@ internal object FolderVaultOpener {
 
     /** Storage for the pre-unlock step (reading the config) when there is no verified raw path. */
     private fun safBootstrap(context: Context, root: DocumentFile, uri: Uri): FolderVaultStorage =
-        SafFolderVaultStorage(context, root, SafDocumentOps(context, allowRaw = false), null, uri)
+        SafFolderVaultStorage(context, root, SafDocumentOps(context, allowRaw = VaultRootDocument.isFileUri(uri)), null, uri)
 
     private fun newMirror(context: Context, uri: Uri): MirrorSyncCoordinator {
         val realOps = SafDocumentOps(context, allowRaw = false)
         return MirrorSyncCoordinator(context = context, sessionTag = UUID.randomUUID().toString(), realOps = realOps).also { coordinator ->
             try {
-                val realRoot = DocumentFile.fromTreeUri(context, uri) ?: run {
+                val realRoot = VaultRootDocument.from(context, uri) ?: run {
                     val msg = "Cannot open vault root: $uri"
                     VeLog.e(TAG) { msg }
                     throw VaultIOException(msg)
@@ -67,7 +68,7 @@ internal object FolderVaultOpener {
         try {
             val mirroredOps = MirroredSafDocumentOps(context, coordinator)
             if (format == NativeFolderVault.CRYFS) {
-                val realRoot = DocumentFile.fromTreeUri(context, uri) ?: throw VaultIOException("Cannot open vault root: $uri")
+                val realRoot = VaultRootDocument.from(context, uri) ?: throw VaultIOException("Cannot open vault root: $uri")
                 val mirrorDir = RawFileResolver.getRawFile(context, mirroredOps.root)
                     ?: throw VaultIOException("Mirror directory is not reachable as a file")
                 return CryfsMirrorFolderVaultStorage(context, realRoot, coordinator, mirrorDir, uri)
@@ -92,11 +93,15 @@ internal object FolderVaultOpener {
         makeSession: (handle: Long, volRef: AtomicInteger) -> S,
     ): VaultOpenResult<S> {
         if (!NativeFolderVault.isAvailable) return VaultOpenResult.InvalidVault(UNAVAILABLE)
-        val root = DocumentFile.fromTreeUri(context, vaultRootUri) ?: run {
+        val root = VaultRootDocument.from(context, vaultRootUri) ?: run {
             VeLog.e(TAG) { "open failed: Cannot access folder URI $vaultRootUri" }
             return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
         }
         val rawRoot: File? = RawFileResolver.getVerifiedRawVaultRoot(context, vaultRootUri, sentinel, probeWrite = !readOnly)
+        if (rawRoot == null && VaultRootDocument.isFileUri(vaultRootUri)) {
+            // A file:// root has no SAF route to fall back to.
+            return VaultOpenResult.InvalidVault("Cannot access the selected folder. Check the storage permission and that the folder is writable.")
+        }
         val volRef = AtomicInteger(-1)
         val bootstrap = if (rawRoot == null) safBootstrap(context, root, vaultRootUri) else null
         val provider = if (rawRoot == null) object : FolderVaultSessionProvider {
@@ -156,23 +161,30 @@ internal object FolderVaultOpener {
         makeSession: (handle: Long, volRef: AtomicInteger) -> S,
     ): VaultOpenResult<S> {
         if (!NativeFolderVault.isAvailable) return VaultOpenResult.InvalidVault(UNAVAILABLE)
-        val root = DocumentFile.fromTreeUri(context, vaultRootUri) ?: run {
+        val root = VaultRootDocument.from(context, vaultRootUri) ?: run {
             VeLog.e(TAG) { "create failed: Cannot access folder URI $vaultRootUri" }
             return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
         }
-        val storage = safBootstrap(context, root, vaultRootUri)
+        // A file:// root is written through its path; SAF roots go through the storage bridge as before.
+        val rawRoot: File? = if (VaultRootDocument.isFileUri(vaultRootUri)) {
+            RawFileResolver.getRawFileFromUri(context, vaultRootUri)
+                ?: return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
+        } else {
+            null
+        }
+        val storage = if (rawRoot == null) safBootstrap(context, root, vaultRootUri) else null
         val pw = utf8(password)
         val out = arrayOfNulls<Any?>(2)
         val status = try {
             NativeFolderVault.nativeCreate(
-                format, null, storage, pw, options, cipherName, localStateDir(context), tempDir(context), userEntropy, out,
+                format, rawRoot?.absolutePath, storage, pw, options, cipherName, localStateDir(context), tempDir(context), userEntropy, out,
             )
         } catch (e: Throwable) {
             VeLog.e(TAG, e) { "native create crashed" }
             pw.fill(0)
             return VaultOpenResult.InvalidVault("Failed to create vault: ${e.message}")
         } finally {
-            storage.close()
+            storage?.close()
         }
         pw.fill(0)
         if (status != NativeFolderVault.STATUS_OK) {
@@ -194,7 +206,7 @@ internal object FolderVaultOpener {
         password: CharArray,
     ): VaultOpenResult<Unit> {
         if (!NativeFolderVault.isAvailable) return VaultOpenResult.InvalidVault(UNAVAILABLE)
-        val root = DocumentFile.fromTreeUri(context, vaultRootUri) ?: return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
+        val root = VaultRootDocument.from(context, vaultRootUri) ?: return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
         val rawRoot = RawFileResolver.getVerifiedRawVaultRoot(context, vaultRootUri, sentinel, probeWrite = true)
         val storage = if (rawRoot == null) safBootstrap(context, root, vaultRootUri) else null
         val pwBytes = utf8(password)
@@ -225,7 +237,7 @@ internal object FolderVaultOpener {
     fun probeCryptomator(context: Context, vaultRootUri: Uri, sentinel: String): Int {
         if (!NativeFolderVault.isAvailable) return 0
         val root = try {
-            DocumentFile.fromTreeUri(context, vaultRootUri)
+            VaultRootDocument.from(context, vaultRootUri)
         } catch (_: Exception) {
             null
         } ?: return 0
@@ -271,7 +283,7 @@ internal object FolderVaultOpener {
         opId: Int,
     ): Array<String> {
         if (!NativeFolderVault.isAvailable) return arrayOf("2", UNAVAILABLE)
-        val root = DocumentFile.fromTreeUri(context, vaultRootUri) ?: return arrayOf("2", "Cannot access the selected folder.")
+        val root = VaultRootDocument.from(context, vaultRootUri) ?: return arrayOf("2", "Cannot access the selected folder.")
         val rawRoot = RawFileResolver.getVerifiedRawVaultRoot(context, vaultRootUri, sentinel, probeWrite = repair)
         val storage = if (rawRoot == null) safBootstrap(context, root, vaultRootUri) else null
         val pwBytes = password?.let { utf8(it) }
@@ -302,7 +314,7 @@ internal object FolderVaultOpener {
         newPassword: CharArray,
     ): VaultOpenResult<Unit> {
         if (!NativeFolderVault.isAvailable) return VaultOpenResult.InvalidVault(UNAVAILABLE)
-        val root = DocumentFile.fromTreeUri(context, vaultRootUri) ?: return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
+        val root = VaultRootDocument.from(context, vaultRootUri) ?: return VaultOpenResult.InvalidVault("Cannot access the selected folder.")
         val rawRoot = RawFileResolver.getVerifiedRawVaultRoot(context, vaultRootUri, sentinel, probeWrite = true)
         val storage = if (rawRoot == null) safBootstrap(context, root, vaultRootUri) else null
         val oldBytes = utf8(oldPassword)

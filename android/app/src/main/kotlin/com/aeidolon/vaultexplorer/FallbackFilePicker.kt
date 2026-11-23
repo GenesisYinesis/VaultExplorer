@@ -95,12 +95,18 @@ object FallbackFilePicker {
     }
 
     fun pickFile(activity: Activity, onResult: (File?) -> Unit) {
-        browse(activity, null, false, "", onResult)
+        browse(activity, null, Mode.FILE, "", onResult)
     }
 
     fun pickSaveLocation(activity: Activity, fileName: String, onResult: (File?) -> Unit) {
-        browse(activity, null, true, fileName, onResult)
+        browse(activity, null, Mode.SAVE, fileName, onResult)
     }
+
+    fun pickFolder(activity: Activity, onResult: (File?) -> Unit) {
+        browse(activity, null, Mode.FOLDER, "", onResult)
+    }
+
+    private enum class Mode { FILE, SAVE, FOLDER }
 
     private fun roots(): List<File> {
         val list = ArrayList<File>()
@@ -132,7 +138,7 @@ object FallbackFilePicker {
     private fun browse(
         activity: Activity,
         dir: File?,
-        saveMode: Boolean,
+        mode: Mode,
         fileName: String,
         onResult: (File?) -> Unit,
     ) {
@@ -150,18 +156,22 @@ object FallbackFilePicker {
                     root.name
                 }
                 labels.add(label + "/")
-                actions.add { browse(activity, root, saveMode, fileName, onResult) }
+                actions.add { browse(activity, root, mode, fileName, onResult) }
             }
         } else {
             title = dir.absolutePath
-            if (saveMode) {
+            if (mode == Mode.SAVE) {
                 labels.add(activity.getString(R.string.fallback_picker_save_here, fileName))
                 actions.add { onResult(uniqueFile(dir, fileName)) }
+            }
+            if (mode == Mode.FOLDER) {
+                labels.add(activity.getString(R.string.fallback_picker_select_folder))
+                actions.add { onResult(dir) }
             }
             labels.add(activity.getString(R.string.fallback_picker_parent))
             actions.add {
                 val parent = if (rootList.contains(dir)) null else dir.parentFile
-                browse(activity, parent, saveMode, fileName, onResult)
+                browse(activity, parent, mode, fileName, onResult)
             }
             val children = try {
                 dir.listFiles()
@@ -170,7 +180,7 @@ object FallbackFilePicker {
             }
             if (children == null) {
                 labels.add(activity.getString(R.string.fallback_picker_unreadable))
-                actions.add { browse(activity, dir, saveMode, fileName, onResult) }
+                actions.add { browse(activity, dir, mode, fileName, onResult) }
             } else {
                 val sorted = children.sortedWith(
                     compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })
@@ -178,8 +188,8 @@ object FallbackFilePicker {
                 for (child in sorted) {
                     if (child.isDirectory) {
                         labels.add(child.name + "/")
-                        actions.add { browse(activity, child, saveMode, fileName, onResult) }
-                    } else if (!saveMode) {
+                        actions.add { browse(activity, child, mode, fileName, onResult) }
+                    } else if (mode == Mode.FILE) {
                         labels.add(child.name)
                         actions.add { onResult(child) }
                     }

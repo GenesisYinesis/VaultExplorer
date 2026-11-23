@@ -1,7 +1,7 @@
 package com.aeidolon.vaultexplorer.handlers
 
+import com.aeidolon.vaultexplorer.saf.VaultRootDocument
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.ExecutorService
@@ -228,7 +228,7 @@ class HeaderBackupHandlers(
 
         ioExecutor.execute {
             try {
-                val root = DocumentFile.fromTreeUri(activity, Uri.parse(uriStr))
+                val root = VaultRootDocument.from(activity, Uri.parse(uriStr))
                     ?: throw Exception("Cannot access the selected folder.")
                 val saf = SafDocumentOps(activity)
                 val configDoc = saf.childOf(root, fileName)
@@ -279,7 +279,7 @@ class HeaderBackupHandlers(
                     return@execute
                 }
 
-                val root = DocumentFile.fromTreeUri(activity, Uri.parse(uriStr))
+                val root = VaultRootDocument.from(activity, Uri.parse(uriStr))
                     ?: throw Exception("Cannot access the selected folder.")
                 val saf = SafDocumentOps(activity)
                 saf.childOf(root, fileName)?.delete()

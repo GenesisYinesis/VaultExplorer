@@ -1,8 +1,8 @@
 package com.aeidolon.vaultexplorer.gocryptfs
 
+import com.aeidolon.vaultexplorer.saf.VaultRootDocument
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import com.aeidolon.vaultexplorer.engine.VaultOpenResult
 import com.aeidolon.vaultexplorer.foldervault.FolderVaultOpener
 import com.aeidolon.vaultexplorer.foldervault.NativeFolderVault
@@ -20,7 +20,7 @@ object GocryptfsVault {
     private val CONFIG_FILE_NAME: String get() = NativeFolderVault.configFileName(NativeFolderVault.GOCRYPTFS)
 
     fun looksLikeVault(context: Context, treeUri: Uri): Boolean {
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+        val root = VaultRootDocument.from(context, treeUri) ?: return false
         val saf = SafDocumentOps(context)
         val name = CONFIG_FILE_NAME
         return name.isNotEmpty() && saf.childOf(root, name) != null

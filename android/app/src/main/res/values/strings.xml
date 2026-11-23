@@ -61,6 +61,7 @@
     <string name="fallback_picker_choose_storage">Choose storage</string>
     <string name="fallback_picker_internal_storage">Internal storage</string>
     <string name="fallback_picker_save_here">Save here: %1$s</string>
+    <string name="fallback_picker_select_folder">[ Select this folder ]</string>
     <string name="fallback_picker_parent">.. (parent folder)</string>
     <string name="fallback_picker_unreadable">(cannot read this folder)</string>
     <string name="fallback_picker_cancel">Cancel</string>

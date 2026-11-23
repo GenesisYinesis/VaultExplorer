@@ -753,6 +753,8 @@ class VaultUnlockHandlers(
                     } else {
                         DocumentFile.fromSingleUri(activity, uri)?.exists() == true
                     }
+                } else if (uri.scheme == "file") {
+                    File(uri.path ?: "").exists()
                 } else {
                     File(filePath).exists()
                 }
