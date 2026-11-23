@@ -4,7 +4,6 @@ import io.flutter.plugin.common.MethodChannel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.aeidolon.vaultexplorer.container.ContainerSessionRegistry
@@ -18,7 +17,8 @@ import com.aeidolon.vaultexplorer.handlers.VaultCreationHandlers
  * a Result *directly* (e.g. on an early validation failure) and *also*
  * stashes that same Result, the next stash() call tries to reply to an
  * already-completed Result -- which the real Flutter engine rejects with
- * "Reply already submitted". The fix is procedural, not structural: a
+ * "Reply already submitted". stash() tolerates that rejection as a safety
+ * net (a launch that throws is answered by the method channel), but a
  * handler must do exactly one of "reply directly and return" or "stash and
  * let the activity-result callback reply", never both.
  *
@@ -213,21 +213,26 @@ class PendingResultLeakTest {
     }
 
     @Test
-    fun `demonstrates the hazard itself -- a handler that replies directly AND stashes causes the next stash to throw`() {
-        // The bug pattern this file used to just describe: a handler
-        // replies directly (completing the Result) but also stashes it
-        // anyway. The *next* stash() call tries to cancel that
-        // already-completed Result and must throw, exactly like the real
-        // Flutter engine would on a genuine double reply.
+    fun `stash survives a previous result that was already answered, and the new one still completes normally`() {
+        // A launch that throws after stash() is answered by the method
+        // channel itself, leaving a completed Result in the pending slot.
+        // The next stash() must not fail the new request because of it.
         val pendingResult = PendingActivityResult()
-        val misusedResult = FakeResult()
+        val answeredResult = FakeResult()
 
-        misusedResult.error("INVALID_ARGS", "simulated buggy handler", null) // replied directly...
-        pendingResult.stash(misusedResult) // ...but also stashed. This is the bug.
+        pendingResult.stash(answeredResult)
+        answeredResult.error("error", "simulated launch failure", null)
 
         val nextResult = FakeResult()
-        assertThrows(IllegalStateException::class.java) {
-            pendingResult.stash(nextResult) // tries to cancel misusedResult -> double reply
-        }
+        pendingResult.stash(nextResult) // must not throw
+
+        assertEquals(1, answeredResult.errorCalls)
+        assertEquals("error", answeredResult.lastErrorCode)
+        assertEquals(0, nextResult.successCalls + nextResult.errorCalls)
+
+        val taken = pendingResult.take()
+        assertNotNull(taken)
+        taken!!.success(true)
+        assertEquals(1, nextResult.successCalls)
     }
 }
