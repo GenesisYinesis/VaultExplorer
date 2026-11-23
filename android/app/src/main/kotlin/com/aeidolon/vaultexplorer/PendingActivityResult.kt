@@ -20,8 +20,13 @@ class PendingActivityResult {
 
     /** Cancels any previous pending result and stashes [result] as the new one. */
     fun stash(result: MethodChannel.Result) {
-        pending?.error("CANCELLED", "Operation superseded by a new request", null)
+        val previous = pending
         pending = result
+        try {
+            previous?.error("CANCELLED", "Operation superseded by a new request", null)
+        } catch (_: IllegalStateException) {
+            // A launch that threw was already answered by the method channel.
+        }
     }
 
     /** Takes and clears the pending result, or null if none is waiting. */

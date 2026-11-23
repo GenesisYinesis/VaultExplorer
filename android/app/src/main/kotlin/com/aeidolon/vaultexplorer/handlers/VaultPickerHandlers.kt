@@ -362,9 +362,12 @@ class VaultPickerHandlers(
     private val pickArchiveFileLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode == Activity.RESULT_OK && data?.data != null) {
+        handlePickArchiveFileResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickArchiveFileResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode == Activity.RESULT_OK && data?.data != null) {
             val uri = data.data!!
             ioExecutor.execute {
                 val path = UriToPath.getRawPath(activity, uri)
@@ -503,11 +506,14 @@ class VaultPickerHandlers(
     private val pickKeyfilesLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
-        val data = activityResult.data
-        if (activityResult.resultCode != Activity.RESULT_OK || data == null) {
+        handlePickKeyfilesResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickKeyfilesResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
+        if (resultCode != Activity.RESULT_OK || data == null) {
             res.success(null)
-            return@registerForActivityResult
+            return
         }
         val uris = mutableListOf<Uri>()
         data.clipData?.let { clip ->
@@ -516,7 +522,7 @@ class VaultPickerHandlers(
         if (uris.isEmpty()) data.data?.let { uris.add(it) }
 
         val picked = uris.mapNotNull { uri ->
-            try {
+            if (uri.scheme == "content") try {
                 activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: SecurityException) {}
             try {
@@ -544,13 +550,16 @@ class VaultPickerHandlers(
     private val pickCryptoFilesLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { activityResult ->
-        val res = pendingResult.take() ?: return@registerForActivityResult
+        handlePickCryptoFilesResult(activityResult.resultCode, activityResult.data)
+    }
+
+    private fun handlePickCryptoFilesResult(resultCode: Int, data: Intent?) {
+        val res = pendingResult.take() ?: return
         val wantsSplitFolderAccess = cryptoPickWantsSplitFolderAccess
         cryptoPickWantsSplitFolderAccess = false
-        val data = activityResult.data
-        if (activityResult.resultCode != Activity.RESULT_OK || data == null) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
             res.success(null)
-            return@registerForActivityResult
+            return
         }
         val uris = mutableListOf<Uri>()
         data.clipData?.let { clip ->
@@ -558,7 +567,7 @@ class VaultPickerHandlers(
         }
         if (uris.isEmpty()) data.data?.let { uris.add(it) }
         val picked = uris.mapNotNull { uri ->
-            try {
+            if (uri.scheme == "content") try {
                 activity.contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -589,9 +598,33 @@ class VaultPickerHandlers(
                     activity.runOnUiThread { res.success(picked) }
                 }
             }
-            return@registerForActivityResult
+            return
         }
         res.success(picked)
+    }
+
+    /**
+     * Serves [intent] with the in-app [FallbackFilePicker] when the device has
+     * no system document picker. [onResult] gets the same (resultCode, data)
+     * pair the activity-result launcher would have delivered. Returns false,
+     * doing nothing, when the system picker is available.
+     */
+    private fun pickWithFallback(intent: Intent, onResult: (Int, Intent?) -> Unit): Boolean {
+        if (!FallbackFilePicker.isSystemPickerMissing(activity, intent)) return false
+        FallbackFilePicker.withStoragePermission(
+            activity,
+            onGranted = {
+                FallbackFilePicker.pickFile(activity) { file ->
+                    if (file == null) {
+                        onResult(Activity.RESULT_CANCELED, null)
+                    } else {
+                        onResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file)))
+                    }
+                }
+            },
+            onDenied = { onResult(Activity.RESULT_CANCELED, null) },
+        )
+        return true
     }
 
     fun handlePickContainer(call: MethodCall, result: MethodChannel.Result) {
@@ -650,6 +683,7 @@ class VaultPickerHandlers(
             type = "application/zip"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed"))
         }
+        if (pickWithFallback(intent, ::handlePickArchiveFileResult)) return
         pickArchiveFileLauncher.launch(intent)
     }
 
@@ -666,6 +700,7 @@ class VaultPickerHandlers(
             type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
+        if (pickWithFallback(intent, ::handlePickKeyfilesResult)) return
         pickKeyfilesLauncher.launch(intent)
     }
 
@@ -677,6 +712,7 @@ class VaultPickerHandlers(
             type = "*/*"
             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
+        if (pickWithFallback(intent, ::handlePickCryptoFilesResult)) return
         pickCryptoFilesLauncher.launch(intent)
     }
 }
