@@ -10,6 +10,10 @@ class SheetOptionTile extends StatelessWidget {
   final String? subtitle;
   final VoidCallback onTap;
 
+  /// Focuses this tile when the sheet opens, so a TV remote / D-pad lands on
+  /// the options straight away.
+  final bool autofocus;
+
   const SheetOptionTile({
     super.key,
     required this.icon,
@@ -17,6 +21,7 @@ class SheetOptionTile extends StatelessWidget {
     required this.onTap,
     this.iconColor,
     this.subtitle,
+    this.autofocus = false,
   });
 
   @override
@@ -27,6 +32,7 @@ class SheetOptionTile extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadius.md),
+      autofocus: autofocus,
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

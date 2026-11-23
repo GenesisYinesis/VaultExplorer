@@ -449,6 +449,9 @@ class _MediaViewerToolbarSettingsScreenState
   Widget _buildDetailPane() {
     return Navigator(
       key: ValueKey(_selectedSection),
+      // Let a TV remote / D-pad move focus back out to the sidebar; the
+      // default stops directional focus at the edge of this pane.
+      routeDirectionalTraversalEdgeBehavior: TraversalEdgeBehavior.parentScope,
       onGenerateRoute: (_) => MaterialPageRoute(
         builder: (_) => switch (_selectedSection) {
           MediaViewerSection.playback => MediaViewerPlaybackSettingsScreen(

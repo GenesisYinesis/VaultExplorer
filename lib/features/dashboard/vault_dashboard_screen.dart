@@ -766,6 +766,7 @@ class VaultDashboardState extends ConsumerState<VaultDashboard>
               icon: Icons.lock_open_rounded,
               iconColor: cs.primary,
               title: context.l10n.mountExistingContainerTitle,
+              autofocus: true,
               subtitle: context.l10n.mountExistingContainerSubtitle,
               onTap: () {
                 Navigator.pop(sheetContext);

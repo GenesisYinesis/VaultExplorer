@@ -416,6 +416,9 @@ class _AppSettingsScreenState extends ConsumerState<AppSettingsScreen>
   Widget _buildDetailPane() {
     return Navigator(
       key: ValueKey((_selectedSection, _detailNonce)),
+      // Let a TV remote / D-pad move focus back out to the sidebar; the
+      // default stops directional focus at the edge of this pane.
+      routeDirectionalTraversalEdgeBehavior: TraversalEdgeBehavior.parentScope,
       onGenerateInitialRoutes: (navigator, initialRoute) {
         // A search result opened on this layout leaves its destination and
         // row here; take them once so later rebuilds don't replay them.
